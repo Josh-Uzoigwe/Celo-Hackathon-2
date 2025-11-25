@@ -11,11 +11,11 @@ interface PredictionCardProps {
   userBalance: number;
 }
 
-export const PredictionCard: React.FC<PredictionCardProps> = ({ 
-  round, 
-  assetSymbol, 
-  onPredict, 
-  userBalance 
+export const PredictionCard: React.FC<PredictionCardProps> = ({
+  round,
+  assetSymbol,
+  onPredict,
+  userBalance
 }) => {
   const [timeLeft, setTimeLeft] = useState<number>(0);
   const [phaseLabel, setPhaseLabel] = useState<string>('');
@@ -24,21 +24,37 @@ export const PredictionCard: React.FC<PredictionCardProps> = ({
   useEffect(() => {
     if (!round) return;
 
-    const interval = setInterval(() => {
-      const now = Math.floor(Date.now() / 1000);
+    const updateTimer = () => {
+      const now = Date.now();
       let target = 0;
-      
-      if (round.status === RoundStatus.OPEN) {
+      let currentPhase = round.status;
+
+      // Optimistic status update based on timestamps (all in ms)
+      if (currentPhase === RoundStatus.OPEN && now >= round.lockTimestamp) {
+        currentPhase = RoundStatus.LOCKED;
+      }
+      if (currentPhase === RoundStatus.LOCKED && now >= round.closeTimestamp) {
+        currentPhase = RoundStatus.ENDED;
+      }
+
+      if (currentPhase === RoundStatus.OPEN) {
         target = round.lockTimestamp;
         setPhaseLabel('BETTING CLOSES IN');
-      } else if (round.status === RoundStatus.LOCKED) {
+      } else if (currentPhase === RoundStatus.LOCKED) {
         target = round.closeTimestamp;
         setPhaseLabel('ROUND ENDS IN');
+      } else {
+        setPhaseLabel('ROUND ENDED');
+        setTimeLeft(0);
+        return;
       }
-      
-      const diff = Math.max(0, target - now);
+
+      const diff = Math.max(0, Math.floor((target - now) / 1000));
       setTimeLeft(diff);
-    }, 1000);
+    };
+
+    updateTimer(); // Run immediately
+    const interval = setInterval(updateTimer, 1000);
 
     return () => clearInterval(interval);
   }, [round]);
@@ -46,13 +62,13 @@ export const PredictionCard: React.FC<PredictionCardProps> = ({
   const formatTime = (seconds: number) => {
     // Handle larger formats for Days/Hours
     if (seconds > 86400) {
-        const d = Math.floor(seconds / 86400);
-        return `${d}d ${Math.floor((seconds % 86400) / 3600)}h`;
+      const d = Math.floor(seconds / 86400);
+      return `${d}d ${Math.floor((seconds % 86400) / 3600)}h`;
     }
     if (seconds > 3600) {
-        const h = Math.floor(seconds / 3600);
-        const m = Math.floor((seconds % 3600) / 60);
-        return `${h}h ${m}m`;
+      const h = Math.floor(seconds / 3600);
+      const m = Math.floor((seconds % 3600) / 60);
+      return `${h}h ${m}m`;
     }
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
@@ -68,15 +84,21 @@ export const PredictionCard: React.FC<PredictionCardProps> = ({
   const payoutUp = totalPool === 0 ? 2 : (totalPool / (round.upPool || 1));
   const payoutDown = totalPool === 0 ? 2 : (totalPool / (round.downPool || 1));
 
+  // Determine visual state based on optimistic phase
+  const now = Date.now();
+  let visualStatus = round.status;
+  if (visualStatus === RoundStatus.OPEN && now >= round.lockTimestamp) visualStatus = RoundStatus.LOCKED;
+  if (visualStatus === RoundStatus.LOCKED && now >= round.closeTimestamp) visualStatus = RoundStatus.ENDED;
+
   return (
     <div className="glass-panel p-1 rounded-2xl relative overflow-hidden group">
       {/* Decorative Glow - changes based on phase */}
-      <div className={`absolute top-0 left-0 w-full h-1 bg-gradient-to-r ${round.status === RoundStatus.OPEN ? 'from-emerald-400 via-emerald-500 to-emerald-400' : 'from-amber-400 via-orange-500 to-amber-400'}`} />
-      
+      <div className={`absolute top-0 left-0 w-full h-1 bg-gradient-to-r ${visualStatus === RoundStatus.OPEN ? 'from-emerald-400 via-emerald-500 to-emerald-400' : 'from-amber-400 via-orange-500 to-amber-400'}`} />
+
       <div className="p-6">
         <div className="flex justify-between items-center mb-6">
           <div className="flex items-center gap-2">
-            {round.status === RoundStatus.OPEN ? (
+            {visualStatus === RoundStatus.OPEN ? (
               <span className="flex items-center gap-2 text-emerald-400 font-bold tracking-wider">
                 <Timer className="w-5 h-5" /> LIVE
               </span>
@@ -88,10 +110,10 @@ export const PredictionCard: React.FC<PredictionCardProps> = ({
             <span className="text-slate-400 text-sm">#{round.id}</span>
           </div>
           <div className="text-right">
-             <div className="text-xs text-slate-500 font-bold tracking-widest mb-1">{phaseLabel}</div>
-             <div className={`text-2xl font-display font-bold ${round.status === RoundStatus.OPEN ? 'text-white' : 'text-amber-400'}`}>
-                {formatTime(timeLeft)}
-             </div>
+            <div className="text-xs text-slate-500 font-bold tracking-widest mb-1">{phaseLabel}</div>
+            <div className={`text-2xl font-display font-bold ${visualStatus === RoundStatus.OPEN ? 'text-white' : 'text-amber-400'}`}>
+              {formatTime(timeLeft)}
+            </div>
           </div>
         </div>
 
@@ -116,27 +138,27 @@ export const PredictionCard: React.FC<PredictionCardProps> = ({
         </div>
 
         {/* Inputs */}
-        {round.status === RoundStatus.OPEN ? (
+        {visualStatus === RoundStatus.OPEN ? (
           <div className="space-y-4">
-             <div className="flex items-center justify-between bg-slate-900/50 rounded-lg p-2 border border-slate-700">
-                <div className="flex items-center gap-2 text-slate-400">
-                    <Wallet size={16} />
-                    <span className="text-sm">Balance: {userBalance.toFixed(2)}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                    <input 
-                        type="number" 
-                        value={betAmount}
-                        onChange={(e) => setBetAmount(e.target.value)}
-                        className="bg-transparent text-right text-white font-bold focus:outline-none w-24"
-                    />
-                    <span className="text-sm text-slate-500 font-bold">{assetSymbol}</span>
-                </div>
-             </div>
+            <div className="flex items-center justify-between bg-slate-900/50 rounded-lg p-2 border border-slate-700">
+              <div className="flex items-center gap-2 text-slate-400">
+                <Wallet size={16} />
+                <span className="text-sm">Balance: {userBalance.toFixed(2)}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  value={betAmount}
+                  onChange={(e) => setBetAmount(e.target.value)}
+                  className="bg-transparent text-right text-white font-bold focus:outline-none w-24"
+                />
+                <span className="text-sm text-slate-500 font-bold">{assetSymbol}</span>
+              </div>
+            </div>
 
             <div className="grid grid-cols-2 gap-4">
-              <Button 
-                variant="success" 
+              <Button
+                variant="success"
                 className="h-16 text-lg"
                 onClick={() => onPredict(PredictionDirection.UP, Number(betAmount))}
               >
@@ -144,8 +166,8 @@ export const PredictionCard: React.FC<PredictionCardProps> = ({
                   <span className="flex items-center gap-1">ENTER UP <ArrowUp className="w-4 h-4" /></span>
                 </div>
               </Button>
-              <Button 
-                variant="danger" 
+              <Button
+                variant="danger"
                 className="h-16 text-lg"
                 onClick={() => onPredict(PredictionDirection.DOWN, Number(betAmount))}
               >
@@ -155,27 +177,27 @@ export const PredictionCard: React.FC<PredictionCardProps> = ({
               </Button>
             </div>
             <div className="text-center text-xs text-slate-500 mt-2">
-               Positions locked in <Clock size={10} className="inline mx-1"/> 
-               {formatTime(timeLeft)}
+              Positions locked in <Clock size={10} className="inline mx-1" />
+              {formatTime(timeLeft)}
             </div>
           </div>
         ) : (
           <div className="bg-slate-800/80 rounded-lg p-6 flex flex-col items-center justify-center text-center space-y-4 border border-slate-700 h-48">
-             <div className="relative">
-                <div className="absolute inset-0 bg-amber-500 blur-xl opacity-20 rounded-full"></div>
-                <Lock className="w-12 h-12 text-amber-500 relative z-10" />
-             </div>
-             
-             <div>
-                <h3 className="text-white font-bold text-lg">Predictions Locked</h3>
-                <p className="text-slate-400 text-sm">
-                   Waiting for final settlement price...
-                </p>
-             </div>
-             
-             <div className="w-full bg-slate-900 rounded-full h-1.5 mt-2 overflow-hidden">
-                <div className="bg-amber-500 h-full w-full animate-progress-indeterminate"></div>
-             </div>
+            <div className="relative">
+              <div className="absolute inset-0 bg-amber-500 blur-xl opacity-20 rounded-full"></div>
+              <Lock className="w-12 h-12 text-amber-500 relative z-10" />
+            </div>
+
+            <div>
+              <h3 className="text-white font-bold text-lg">Predictions Locked</h3>
+              <p className="text-slate-400 text-sm">
+                Waiting for final settlement price...
+              </p>
+            </div>
+
+            <div className="w-full bg-slate-900 rounded-full h-1.5 mt-2 overflow-hidden">
+              <div className="bg-amber-500 h-full w-full animate-progress-indeterminate"></div>
+            </div>
           </div>
         )}
       </div>

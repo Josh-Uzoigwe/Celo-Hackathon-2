@@ -1,8 +1,8 @@
-import { Asset } from './types';
+import { Asset, TimeframeConfig } from './types.ts';
 
 export const ASSETS = [
-  Asset.CELO, 
-  Asset.ETH, 
+  Asset.CELO,
+  Asset.ETH,
   Asset.BTC,
   Asset.DOGE,
   Asset.PEPE,
@@ -33,12 +33,6 @@ export const MOCK_PRICES: Record<Asset, number> = {
   [Asset.BONK]: 0.000023,
 };
 
-export interface TimeframeConfig {
-  label: string;
-  durationSec: number;
-  lockOffsetSec: number; // How many seconds BEFORE end does it lock?
-}
-
 export const TIMEFRAMES: TimeframeConfig[] = [
   { label: '1M', durationSec: 60, lockOffsetSec: 30 },      // 30s bet, 30s wait
   { label: '5M', durationSec: 300, lockOffsetSec: 60 },     // 4m bet, 1m wait
@@ -50,3 +44,6 @@ export const TIMEFRAMES: TimeframeConfig[] = [
 ];
 
 export const TOAST_DURATION = 3000;
+
+export const RPC_URL = "https://forno.celo-sepolia.celo-testnet.org";
+export const CELO_SEPOLIA_CHAIN_ID = 11142220;

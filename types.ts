@@ -47,3 +47,9 @@ export interface PricePoint {
   timestamp: number;
   price: number;
 }
+
+export interface TimeframeConfig {
+  label: string;
+  durationSec: number;
+  lockOffsetSec: number;
+}

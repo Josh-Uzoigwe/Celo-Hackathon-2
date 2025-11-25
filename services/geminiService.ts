@@ -1,25 +1,25 @@
 import { GoogleGenAI } from "@google/genai";
 import { Asset, PricePoint } from "../types";
 
-// In a real production app, this would be a backend call to hide the key.
-// For this demo, we assume the environment variable is injected.
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+// Vite uses import.meta.env for environment variables
+const API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
+const ai = new GoogleGenAI({ apiKey: API_KEY });
 
 export const getMarketAnalysis = async (
   asset: Asset,
   priceHistory: PricePoint[]
 ): Promise<{ sentiment: 'BULLISH' | 'BEARISH' | 'NEUTRAL'; reasoning: string }> => {
-  
-  if (!process.env.API_KEY) {
+
+  if (!API_KEY) {
     return {
       sentiment: 'NEUTRAL',
-      reasoning: 'API Key missing. Please configure Gemini API Key to enable AI analysis.'
+      reasoning: 'API Key missing. Please configure VITE_GEMINI_API_KEY in .env to enable AI analysis.'
     };
   }
 
   try {
-    const recentPrices = priceHistory.slice(-20).map(p => p.price.toFixed(2)).join(', ');
-    
+    const recentPrices = priceHistory.slice(-20).map(p => p.price.toFixed(4)).join(', ');
+
     const prompt = `
       Analyze the following recent price trend for ${asset} (Crypto).
       Prices (oldest to newest): [${recentPrices}]
@@ -31,15 +31,18 @@ export const getMarketAnalysis = async (
       Return JSON format: { "sentiment": "BULLISH" | "BEARISH" | "NEUTRAL", "reasoning": "string" }
     `;
 
+    // Using gemini-1.5-flash as it is a stable and fast model for this use case
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-1.5-flash",
       contents: prompt,
       config: {
         responseMimeType: "application/json"
       }
     });
 
-    const text = response.text;
+    const text = response.text; // response.text is a getter/property in this SDK version
+    // @google/genai usually returns response.text()
+
     if (!text) throw new Error("No response from AI");
 
     const result = JSON.parse(text);
