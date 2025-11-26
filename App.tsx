@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ethers } from 'ethers';
 import { Activity, Wallet, Sun, Moon, ChevronDown, LineChart, BarChart2, RefreshCw, TrendingUp, BrainCircuit, X, ArrowUp, ArrowDown, Zap, MessageSquare, Trophy } from 'lucide-react';
+import { Toaster, toast } from 'sonner';
 import { Button } from './components/ui/Button';
 import { PredictionCard } from './components/PredictionCard';
 import { ChatRoom } from './components/ChatRoom';
@@ -30,6 +31,7 @@ export default function App() {
   const [selectedTimeframe, setSelectedTimeframe] = useState<TimeframeConfig>(TIMEFRAMES[1]); // Default 5M
   const [chartMode, setChartMode] = useState<'line' | 'candle'>('line');
   const [currentPrice, setCurrentPrice] = useState(0);
+  const currentPriceRef = useRef(0); // Ref to hold latest price for interval
   const [priceHistory, setPriceHistory] = useState<PricePoint[]>([]);
   const [showAiModal, setShowAiModal] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -37,6 +39,11 @@ export default function App() {
   const [predictions, setPredictions] = useState<(UserPrediction & { result?: RoundResult | null })[]>([]);
   const [currentRound, setCurrentRound] = useState<Round | null>(null);
   const [leaderboardData, setLeaderboardData] = useState<LeaderboardEntry[]>([]);
+
+  // Keep Ref updated
+  useEffect(() => {
+    currentPriceRef.current = currentPrice;
+  }, [currentPrice]);
 
   const checkAndSwitchNetwork = async (provider: ethers.BrowserProvider) => {
     const network = await provider.getNetwork();
@@ -61,12 +68,14 @@ export default function App() {
               }],
             });
             return true;
-          } catch (addError) {
+          } catch (addError: any) {
             console.error("Failed to add network", addError);
+            toast.error("Failed to add Celo Sepolia network: " + addError.message);
             return false;
           }
         }
         console.error("Failed to switch network", switchError);
+        toast.error("Failed to switch network: " + switchError.message);
         return false;
       }
     }
@@ -90,7 +99,7 @@ export default function App() {
 
   const handleConnectWallet = async () => {
     if (!window.ethereum) {
-      alert("Please install MetaMask!");
+      toast.error("Please install MetaMask!");
       return;
     }
 
@@ -98,7 +107,10 @@ export default function App() {
       const provider = new ethers.BrowserProvider(window.ethereum);
       const isNetworkCorrect = await checkAndSwitchNetwork(provider);
 
-      if (!isNetworkCorrect) return;
+      if (!isNetworkCorrect) {
+        toast.error("Failed to switch to Celo Sepolia network.");
+        return;
+      }
 
       const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
 
@@ -106,9 +118,11 @@ export default function App() {
         setUserAddress(accounts[0]);
         setWalletConnected(true);
         updateBalance(accounts[0]);
+        toast.success("Wallet connected successfully!");
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Connection failed", error);
+      toast.error("Failed to connect wallet: " + (error.message || "Unknown error"));
     }
   };
 
@@ -149,14 +163,12 @@ export default function App() {
 
   const fetchContractData = async () => {
     try {
-      // Use a read-only provider for fetching data to ensure we are on the right network
       const readProvider = new ethers.JsonRpcProvider(RPC_URL);
       const contract = new ethers.Contract(PREDICTION_MARKET_ADDRESS, PREDICTION_MARKET_ABI, readProvider);
 
       const currentEpochBigInt = await contract.currentEpoch();
       const currentEpoch = Number(currentEpochBigInt);
 
-      // Fetch current round data
       const roundData = await contract.rounds(currentEpoch);
 
       const now = Date.now() / 1000;
@@ -167,6 +179,37 @@ export default function App() {
         status = RoundStatus.ENDED;
       }
 
+      // --- Local Oracle Logic ---
+      let lockPrice = Number(roundData.lockPrice) > 0 ? Number(roundData.lockPrice) / 1e8 : null;
+      let closePrice = Number(roundData.closePrice) > 0 ? Number(roundData.closePrice) / 1e8 : null;
+
+      const livePrice = currentPriceRef.current; // Use Ref to get latest price in interval
+
+      if (status === RoundStatus.LOCKED || status === RoundStatus.ENDED) {
+        if (!lockPrice) {
+          const storedLock = localStorage.getItem(`round_${currentEpoch}_lockPrice`);
+          if (storedLock) {
+            lockPrice = parseFloat(storedLock);
+          } else if (livePrice > 0) {
+            localStorage.setItem(`round_${currentEpoch}_lockPrice`, livePrice.toString());
+            lockPrice = livePrice;
+          }
+        }
+      }
+
+      if (status === RoundStatus.ENDED) {
+        if (!closePrice) {
+          const storedClose = localStorage.getItem(`round_${currentEpoch}_closePrice`);
+          if (storedClose) {
+            closePrice = parseFloat(storedClose);
+          } else if (livePrice > 0) {
+            localStorage.setItem(`round_${currentEpoch}_closePrice`, livePrice.toString());
+            closePrice = livePrice;
+          }
+        }
+      }
+      // --------------------------
+
       const mappedRound: Round = {
         id: Number(roundData.epoch),
         asset: Asset.CELO,
@@ -174,8 +217,8 @@ export default function App() {
         lockTimestamp: Number(roundData.lockTimestamp) * 1000,
         closeTimestamp: Number(roundData.closeTimestamp) * 1000,
         startPrice: 0,
-        lockPrice: Number(roundData.lockPrice) > 0 ? Number(roundData.lockPrice) / 1e8 : null,
-        closePrice: Number(roundData.closePrice) > 0 ? Number(roundData.closePrice) / 1e8 : null,
+        lockPrice: lockPrice,
+        closePrice: closePrice,
         totalPool: parseFloat(ethers.formatEther(roundData.totalAmount)),
         status: status,
         winner: null,
@@ -207,15 +250,14 @@ export default function App() {
         : await contract.betDown(currentEpochBigInt, { value: ethers.parseEther(amount.toString()) });
 
       await tx.wait();
-      alert("Prediction placed successfully!");
+      toast.success("Prediction placed successfully!");
       updateBalance(userAddress);
-      fetchContractData(); // Refresh round data
-      // Refresh predictions list (mock for now or fetch from contract)
+      fetchContractData();
       setPredictions(prev => [...prev, { roundId: Number(currentEpochBigInt), direction, amount, claimed: false }]);
 
-    } catch (error) {
+    } catch (error: any) {
       console.error("Prediction failed", error);
-      alert("Prediction failed: " + (error as any).message);
+      toast.error("Prediction failed: " + (error.message || "Unknown error"));
     }
   };
 
@@ -229,7 +271,6 @@ export default function App() {
       const currentEpoch = Number(currentEpochBigInt);
 
       const epochsToClaim: number[] = [];
-      // Check last 10 epochs
       for (let i = 1; i <= 10; i++) {
         const epochToCheck = currentEpoch - i;
         if (epochToCheck < 0) continue;
@@ -243,15 +284,15 @@ export default function App() {
       if (epochsToClaim.length > 0) {
         const tx = await contract.claim(epochsToClaim);
         await tx.wait();
-        alert(`Claimed winnings for epochs: ${epochsToClaim.join(', ')}`);
+        toast.success(`Claimed winnings for epochs: ${epochsToClaim.join(', ')}`);
         updateBalance(userAddress);
       } else {
-        alert("No winnings to claim from the last 10 rounds.");
+        toast.info("No winnings to claim from the last 10 rounds.");
       }
 
-    } catch (error) {
+    } catch (error: any) {
       console.error("Claim failed", error);
-      alert("Claim failed: " + (error as any).message);
+      toast.error("Claim failed: " + (error.message || "Unknown error"));
     }
   };
 
@@ -346,6 +387,7 @@ export default function App() {
 
   return (
     <div className={`min-h-screen transition-colors duration-300 ${isDark ? 'bg-[#0f172a] text-slate-200 selection:bg-indigo-500/30' : 'bg-slate-100 text-slate-800 selection:bg-indigo-200'}`}>
+      <Toaster richColors position="top-center" theme={isDark ? 'dark' : 'light'} />
 
       {/* Header */}
       <nav className={`border-b backdrop-blur-md sticky top-0 z-50 transition-colors duration-300 ${isDark ? 'border-white/5 bg-[#0f172a]/80' : 'border-slate-200 bg-white/80'}`}>
@@ -630,11 +672,11 @@ export default function App() {
                         const contract = new ethers.Contract(PREDICTION_MARKET_ADDRESS, PREDICTION_MARKET_ABI, signer);
                         const tx = await contract.genesisStartRound();
                         await tx.wait();
-                        alert("Market started successfully!");
+                        toast.success("Market started successfully!");
                         fetchContractData();
                       } catch (e: any) {
                         console.error(e);
-                        alert("Failed to start market: " + e.message);
+                        toast.error("Failed to start market: " + e.message);
                       }
                     }}
                     className="w-full"
@@ -662,11 +704,11 @@ export default function App() {
                         const contract = new ethers.Contract(PREDICTION_MARKET_ADDRESS, PREDICTION_MARKET_ABI, signer);
                         const tx = await contract.executeRound();
                         await tx.wait();
-                        alert("Next round started successfully!");
+                        toast.success("Next round started successfully!");
                         fetchContractData();
                       } catch (e: any) {
                         console.error(e);
-                        alert("Failed to start next round: " + e.message);
+                        toast.error("Failed to start next round: " + e.message);
                       }
                     }}
                     className="w-full"
@@ -741,4 +783,4 @@ export default function App() {
       </main>
     </div >
   );
-};
+}

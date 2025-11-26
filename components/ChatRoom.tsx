@@ -1,9 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, MessageSquare, User } from 'lucide-react';
+import { Send, MessageSquare, Wifi, WifiOff } from 'lucide-react';
 import Gun from 'gun';
 
-// Initialize Gun
-const gun = Gun(['https://gun-manhattan.herokuapp.com/gun']);
+// Initialize Gun with a more robust list of public peers
+const gun = Gun({
+    peers: [
+        'https://gun-manhattan.herokuapp.com/gun',
+        'https://gun-eu.herokuapp.com/gun',
+        'https://gunjs.herokuapp.com/gun',
+        'https://peer.wallie.io/gun',
+        'https://plato.design/gun'
+    ],
+    localStorage: true // Enable local storage for better persistence
+});
 
 interface Message {
     id: string;
@@ -16,6 +25,7 @@ interface Message {
 export const ChatRoom: React.FC<{ userAddress: string }> = ({ userAddress }) => {
     const [messages, setMessages] = useState<Message[]>([]);
     const [inputText, setInputText] = useState('');
+    const [isConnected, setIsConnected] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     const scrollToBottom = () => {
@@ -27,8 +37,19 @@ export const ChatRoom: React.FC<{ userAddress: string }> = ({ userAddress }) => 
     }, [messages]);
 
     useEffect(() => {
+        // Connection status check (approximate)
+        const checkConnection = () => {
+            // @ts-ignore - Gun internal API
+            const peers = gun._.opt.peers;
+            const connected = Object.values(peers).some((peer: any) => peer.wire && peer.wire.readyState === 1);
+            setIsConnected(connected);
+        };
+
+        const interval = setInterval(checkConnection, 2000);
+        checkConnection(); // Initial check
+
         // Subscribe to chat updates
-        const chatNode = gun.get('celopulse-chat-v1');
+        const chatNode = gun.get('celopulse-chat-v2'); // Bumped version for clean slate
 
         const handleMessage = (data: any, id: string) => {
             if (!data || !data.text) return;
@@ -53,6 +74,7 @@ export const ChatRoom: React.FC<{ userAddress: string }> = ({ userAddress }) => 
 
         return () => {
             chatNode.off();
+            clearInterval(interval);
         };
     }, [userAddress]);
 
@@ -71,7 +93,7 @@ export const ChatRoom: React.FC<{ userAddress: string }> = ({ userAddress }) => 
         };
 
         // Save to Gun
-        gun.get('celopulse-chat-v1').set(messageData);
+        gun.get('celopulse-chat-v2').set(messageData);
 
         setInputText('');
     };
@@ -82,10 +104,20 @@ export const ChatRoom: React.FC<{ userAddress: string }> = ({ userAddress }) => 
             <div className="p-4 border-b border-white/10 flex items-center gap-2 bg-slate-900/80">
                 <MessageSquare className="w-5 h-5 text-indigo-500" />
                 <h3 className="font-bold text-white">Trollbox (P2P)</h3>
-                <span className="text-xs text-emerald-500 ml-auto flex items-center gap-1">
+                <div className="ml-auto flex items-center gap-2">
+                    {isConnected ? (
+                        <span className="text-xs text-emerald-500 flex items-center gap-1">
+                            <Wifi size={14} />
+                            <span className="hidden sm:inline">Connected</span>
+                        </span>
+                    ) : (
+                        <span className="text-xs text-amber-500 flex items-center gap-1">
+                            <WifiOff size={14} />
+                            <span className="hidden sm:inline">Connecting...</span>
+                        </span>
+                    )}
                     <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                    Live
-                </span>
+                </div>
             </div>
 
             {/* Messages */}
