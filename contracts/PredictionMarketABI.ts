@@ -174,6 +174,55 @@ export const PREDICTION_MARKET_ABI = [
         "type": "function"
     },
     {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "_interval",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "_buffer",
+                "type": "uint256"
+            }
+        ],
+        "name": "setRoundInterval",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "uint256",
+                "name": "epoch",
+                "type": "uint256"
+            },
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "user",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint8",
+                "name": "pos",
+                "type": "uint8"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "amount",
+                "type": "uint256"
+            }
+        ],
+        "name": "BetPlaced",
+        "type": "event"
+    },
+    {
         "anonymous": false,
         "inputs": [
             {
@@ -191,7 +240,40 @@ export const PREDICTION_MARKET_ABI = [
         ],
         "name": "Claim",
         "type": "event"
+    },
+    {
+        "inputs": [],
+        "name": "latestRoundData",
+        "outputs": [
+            {
+                "internalType": "uint80",
+                "name": "roundId",
+                "type": "uint80"
+            },
+            {
+                "internalType": "int256",
+                "name": "answer",
+                "type": "int256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "startedAt",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "updatedAt",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint80",
+                "name": "answeredInRound",
+                "type": "uint80"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
     }
 ];
 
-export const PREDICTION_MARKET_ADDRESS = "0x2AA2572befe6F81ed1756895bCF7cF2BA40AACd6";
+export const PREDICTION_MARKET_ADDRESS = "0x6606ac9d8508439571a24AaAbC7dC22589c530eC";

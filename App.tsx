@@ -28,7 +28,7 @@ export default function App() {
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
   const [activeAsset, setActiveAsset] = useState<Asset>(Asset.CELO);
   const [isAssetDropdownOpen, setIsAssetDropdownOpen] = useState(false);
-  const [selectedTimeframe, setSelectedTimeframe] = useState<TimeframeConfig>(TIMEFRAMES[1]); // Default 5M
+  const [selectedTimeframe, setSelectedTimeframe] = useState<TimeframeConfig>(TIMEFRAMES[0]); // Default 1M (120s)
   const [chartMode, setChartMode] = useState<'line' | 'candle'>('line');
   const [currentPrice, setCurrentPrice] = useState(0);
   const currentPriceRef = useRef(0); // Ref to hold latest price for interval
@@ -270,24 +270,60 @@ export default function App() {
       const currentEpochBigInt = await contract.currentEpoch();
       const currentEpoch = Number(currentEpochBigInt);
 
+      console.log(`Checking for claims up to epoch ${currentEpoch}...`);
       const epochsToClaim: number[] = [];
-      for (let i = 1; i <= 10; i++) {
+
+      // Check last 20 rounds
+      for (let i = 1; i <= 20; i++) {
         const epochToCheck = currentEpoch - i;
         if (epochToCheck < 0) continue;
 
         const betInfo = await contract.ledger(epochToCheck, userAddress);
+
         if (betInfo.amount > 0n && !betInfo.claimed) {
-          epochsToClaim.push(epochToCheck);
+          console.log(`Found bet for epoch ${epochToCheck}:`, {
+            amount: ethers.formatEther(betInfo.amount),
+            position: Number(betInfo.position) === 0 ? 'UP' : 'DOWN',
+            claimed: betInfo.claimed
+          });
+
+          const roundData = await contract.rounds(epochToCheck);
+          const lockPrice = Number(roundData.lockPrice);
+          const closePrice = Number(roundData.closePrice);
+
+          if (closePrice === 0) {
+            console.log(`Round ${epochToCheck} not yet ended (closePrice is 0).`);
+            continue;
+          }
+
+          const winningPosition = closePrice > lockPrice ? 0 : 1; // 0=UP, 1=DOWN
+          const userPosition = Number(betInfo.position);
+
+          console.log(`Round ${epochToCheck} Result:`, {
+            lockPrice,
+            closePrice,
+            winner: winningPosition === 0 ? 'UP' : 'DOWN',
+            userBet: userPosition === 0 ? 'UP' : 'DOWN'
+          });
+
+          if (userPosition === winningPosition) {
+            console.log(`>>> User WON round ${epochToCheck}! Adding to claim list.`);
+            epochsToClaim.push(epochToCheck);
+          } else {
+            console.log(`>>> User LOST round ${epochToCheck}.`);
+          }
         }
       }
 
       if (epochsToClaim.length > 0) {
+        console.log("Claiming epochs:", epochsToClaim);
         const tx = await contract.claim(epochsToClaim);
         await tx.wait();
         toast.success(`Claimed winnings for epochs: ${epochsToClaim.join(', ')}`);
         updateBalance(userAddress);
       } else {
-        toast.info("No winnings to claim from the last 10 rounds.");
+        console.log("No winning rounds found to claim.");
+        toast.info("No winnings to claim from the last 20 rounds.");
       }
 
     } catch (error: any) {
@@ -746,6 +782,34 @@ export default function App() {
                   </li>
                 </ul>
               </div>
+
+              {/* Admin Controls */}
+              {walletConnected && (
+                <div className="p-4 rounded-xl border border-dashed border-slate-500/30">
+                  <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-2">Admin Controls</h3>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={async () => {
+                      try {
+                        const provider = new ethers.BrowserProvider(window.ethereum);
+                        const signer = await provider.getSigner();
+                        const contract = new ethers.Contract(PREDICTION_MARKET_ADDRESS, PREDICTION_MARKET_ABI, signer);
+                        // Set interval to 120s (2 mins) and buffer to 60s (1 min lock)
+                        const tx = await contract.setRoundInterval(120, 60);
+                        await tx.wait();
+                        toast.success("Round duration updated to 2 minutes!");
+                      } catch (e: any) {
+                        console.error(e);
+                        toast.error("Failed to update duration: " + e.message);
+                      }
+                    }}
+                    className="w-full text-xs"
+                  >
+                    Update Duration to 2m
+                  </Button>
+                </div>
+              )}
             </div>
 
           </div>

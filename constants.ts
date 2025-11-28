@@ -34,7 +34,7 @@ export const MOCK_PRICES: Record<Asset, number> = {
 };
 
 export const TIMEFRAMES: TimeframeConfig[] = [
-  { label: '1M', durationSec: 60, lockOffsetSec: 30 },      // 30s bet, 30s wait
+  { label: '1M', durationSec: 120, lockOffsetSec: 60 },      // 60s bet, 60s wait
   { label: '5M', durationSec: 300, lockOffsetSec: 60 },     // 4m bet, 1m wait
   { label: '15M', durationSec: 900, lockOffsetSec: 180 },   // 12m bet, 3m wait
   { label: '1H', durationSec: 3600, lockOffsetSec: 600 },   // 50m bet, 10m wait

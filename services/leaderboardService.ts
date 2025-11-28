@@ -5,7 +5,7 @@ import { RPC_URL } from '../constants';
 export interface LeaderboardEntry {
     address: string;
     totalWinnings: number;
-    roundsWon: number; // We might not be able to get this easily from Claim events alone, but we can approximate or omit
+    roundsWon: number;
 }
 
 export const fetchLeaderboard = async (): Promise<LeaderboardEntry[]> => {
@@ -14,41 +14,59 @@ export const fetchLeaderboard = async (): Promise<LeaderboardEntry[]> => {
         const contract = new ethers.Contract(PREDICTION_MARKET_ADDRESS, PREDICTION_MARKET_ABI, provider);
 
         const currentBlock = await provider.getBlockNumber();
-        const fromBlock = Math.max(0, currentBlock - 50000); // Look back ~50k blocks
+        // Reduce range to 10000 blocks to avoid RPC timeouts/limits
+        const fromBlock = Math.max(0, currentBlock - 10000);
+
+        console.log(`Fetching leaderboard events from block ${fromBlock} to ${currentBlock}`);
 
         // Fetch Claim events
         const claimFilter = contract.filters.Claim();
-        const claimLogs = await contract.queryFilter(claimFilter, fromBlock);
+        const claimLogs = await contract.queryFilter(claimFilter, fromBlock).catch(e => {
+            console.error("Failed to fetch Claim logs", e);
+            return [];
+        });
 
-        // Fetch BetPlaced events
-        // event BetPlaced(uint256 indexed epoch, address indexed user, Position pos, uint256 amount);
+        // Fetch BetPlaced events to ensure we have a list of all active users
         const betFilter = contract.filters.BetPlaced();
-        const betLogs = await contract.queryFilter(betFilter, fromBlock);
+        const betLogs = await contract.queryFilter(betFilter, fromBlock).catch(e => {
+            console.error("Failed to fetch BetPlaced logs", e);
+            return [];
+        });
 
         const winningsMap: Record<string, number> = {};
         const roundsWonMap: Record<string, number> = {};
-        const activityMap: Record<string, boolean> = {}; // Track all active users
+        const activityMap: Record<string, boolean> = {};
 
         // Process Claims
-        claimLogs.forEach((log: any) => {
-            const { user, amount } = log.args;
-            const amountEth = parseFloat(ethers.formatEther(amount));
+        for (const log of claimLogs) {
+            try {
+                // @ts-ignore
+                const { user, amount } = log.args;
+                const amountEth = parseFloat(ethers.formatEther(amount));
 
-            if (winningsMap[user]) {
-                winningsMap[user] += amountEth;
-                roundsWonMap[user] += 1;
-            } else {
-                winningsMap[user] = amountEth;
-                roundsWonMap[user] = 1;
+                if (winningsMap[user]) {
+                    winningsMap[user] += amountEth;
+                    roundsWonMap[user] += 1;
+                } else {
+                    winningsMap[user] = amountEth;
+                    roundsWonMap[user] = 1;
+                }
+                activityMap[user] = true;
+            } catch (err) {
+                console.warn("Error parsing claim log", err);
             }
-            activityMap[user] = true;
-        });
+        }
 
-        // Process Bets to ensure all active users are on the list
-        betLogs.forEach((log: any) => {
-            const { user } = log.args;
-            activityMap[user] = true;
-        });
+        // Process Bets
+        for (const log of betLogs) {
+            try {
+                // @ts-ignore
+                const { user } = log.args;
+                activityMap[user] = true;
+            } catch (err) {
+                console.warn("Error parsing bet log", err);
+            }
+        }
 
         const leaderboard: LeaderboardEntry[] = Object.keys(activityMap).map(address => ({
             address,
@@ -56,13 +74,8 @@ export const fetchLeaderboard = async (): Promise<LeaderboardEntry[]> => {
             roundsWon: roundsWonMap[address] || 0
         }));
 
-        // Sort by winnings desc, then by rounds won
-        return leaderboard.sort((a, b) => {
-            if (b.totalWinnings !== a.totalWinnings) {
-                return b.totalWinnings - a.totalWinnings;
-            }
-            return b.roundsWon - a.roundsWon;
-        }).slice(0, 10);
+        // Sort by total winnings (descending)
+        return leaderboard.sort((a, b) => b.totalWinnings - a.totalWinnings);
 
     } catch (error) {
         console.error("Failed to fetch leaderboard:", error);
