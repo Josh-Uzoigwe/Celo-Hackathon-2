@@ -45,5 +45,5 @@ export const TIMEFRAMES: TimeframeConfig[] = [
 
 export const TOAST_DURATION = 3000;
 
-export const RPC_URL = "https://forno.celo-sepolia.celo-testnet.org";
-export const CELO_SEPOLIA_CHAIN_ID = 11142220;
+export const RPC_URL = "https://forno.celo.org";
+export const CELO_CHAIN_ID = 42220;

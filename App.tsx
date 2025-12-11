@@ -10,7 +10,7 @@ import { getMarketAnalysis } from './services/geminiService';
 import { fetchRealPrice } from './services/priceService';
 import { fetchLeaderboard, LeaderboardEntry } from './services/leaderboardService';
 import { getRoundResult, RoundResult } from './services/predictionService';
-import { ASSETS, TIMEFRAMES, RPC_URL, CELO_SEPOLIA_CHAIN_ID, TOAST_DURATION } from './constants';
+import { ASSETS, TIMEFRAMES, RPC_URL, CELO_CHAIN_ID, TOAST_DURATION } from './constants';
 import { PREDICTION_MARKET_ABI, PREDICTION_MARKET_ADDRESS } from './contracts/PredictionMarketABI';
 import { Asset, PredictionDirection, Round, RoundStatus, UserPrediction, PricePoint, TimeframeConfig } from './types';
 
@@ -47,11 +47,11 @@ export default function App() {
 
   const checkAndSwitchNetwork = async (provider: ethers.BrowserProvider) => {
     const network = await provider.getNetwork();
-    if (Number(network.chainId) !== CELO_SEPOLIA_CHAIN_ID) {
+    if (Number(network.chainId) !== CELO_CHAIN_ID) {
       try {
         await window.ethereum.request({
           method: 'wallet_switchEthereumChain',
-          params: [{ chainId: '0x' + CELO_SEPOLIA_CHAIN_ID.toString(16) }],
+          params: [{ chainId: '0x' + CELO_CHAIN_ID.toString(16) }],
         });
         return true;
       } catch (switchError: any) {
@@ -60,17 +60,17 @@ export default function App() {
             await window.ethereum.request({
               method: 'wallet_addEthereumChain',
               params: [{
-                chainId: '0x' + CELO_SEPOLIA_CHAIN_ID.toString(16),
-                chainName: 'Celo Sepolia Testnet',
+                chainId: '0x' + CELO_CHAIN_ID.toString(16),
+                chainName: 'Celo Mainnet',
                 nativeCurrency: { name: 'CELO', symbol: 'CELO', decimals: 18 },
                 rpcUrls: [RPC_URL],
-                blockExplorerUrls: ['https://sepolia.celoscan.io/'],
+                blockExplorerUrls: ['https://celoscan.io/'],
               }],
             });
             return true;
           } catch (addError: any) {
             console.error("Failed to add network", addError);
-            toast.error("Failed to add Celo Sepolia network: " + addError.message);
+            toast.error("Failed to add Celo Mainnet: " + addError.message);
             return false;
           }
         }
@@ -87,7 +87,7 @@ export default function App() {
       try {
         const provider = new ethers.BrowserProvider(window.ethereum);
         const network = await provider.getNetwork();
-        if (Number(network.chainId) === CELO_SEPOLIA_CHAIN_ID) {
+        if (Number(network.chainId) === CELO_CHAIN_ID) {
           const balance = await provider.getBalance(address);
           setUserBalance(parseFloat(ethers.formatEther(balance)));
         }
@@ -108,7 +108,7 @@ export default function App() {
       const isNetworkCorrect = await checkAndSwitchNetwork(provider);
 
       if (!isNetworkCorrect) {
-        toast.error("Failed to switch to Celo Sepolia network.");
+        toast.error("Failed to switch to Celo Mainnet.");
         return;
       }
 
@@ -147,7 +147,7 @@ export default function App() {
       window.ethereum.request({ method: 'eth_accounts' }).then(async (accounts: string[]) => {
         if (accounts.length > 0) {
           const network = await provider.getNetwork();
-          if (Number(network.chainId) === CELO_SEPOLIA_CHAIN_ID) {
+          if (Number(network.chainId) === CELO_CHAIN_ID) {
             setUserAddress(accounts[0]);
             setWalletConnected(true);
             updateBalance(accounts[0]);
